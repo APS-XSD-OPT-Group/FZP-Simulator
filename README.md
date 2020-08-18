@@ -1,5 +1,5 @@
 # FZP-Simulator
-Python translation of Original M. Wojcik's MATLAB code 
+Python translation of the original M. Wojcik's MATLAB code 
 
 
 to install: `git clone https://github.com/APS-XSD-OPT-Group/FZP-Simulator.git`
