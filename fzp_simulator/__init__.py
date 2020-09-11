@@ -42,13 +42,4 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE         #
 # POSSIBILITY OF SUCH DAMAGE.                                             #
 # #########################################################################
-import os
-import six
-import scipy.io
 
-def package_dirname(package):
-    if isinstance(package, six.string_types): package = __import__(package, fromlist=[""])
-
-    return os.path.dirname(package.__file__)
-
-bessel_zeros = scipy.io.loadmat(os.path.join(package_dirname("fzp_simulator"), "data", "c_zeros.mat"))

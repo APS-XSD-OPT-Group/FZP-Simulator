@@ -57,17 +57,20 @@
 
 import numpy
 from scipy.special import jv as besselj
+import multiprocessing
+
+__TOTAL_CPU = multiprocessing.cpu_count()
+__N_CPU = 1 if __TOTAL_CPU < 2 else __TOTAL_CPU - 1
 
 #
 # h is the 1D wavefield
 # R is the maximum radius in Q space
 # c are the zeros of the bessel functions
 
-def Hankel_Transform_MGS(h, R, c, Nzeros=0):
+def Hankel_Transform_MGS(h, R, c, Nzeros=0, multipool=True):
     N = len(h)
 
     if Nzeros <= 0: Nzeros = N
-    H = numpy.full(N, 0j)
 
     V = c[N]/(2*numpy.pi*R)
 
@@ -81,9 +84,19 @@ def Hankel_Transform_MGS(h, R, c, Nzeros=0):
     Bessel_Jn = numpy.abs(besselj(1, c[0:Nzeros])) / (2 / c[N])
     Bessel_Jm = numpy.abs(besselj(1, c))
 
-    for jj in range(0, N):
-        C     = besselj(0, c[0:Nzeros] * c[jj] / c[N]) / (Bessel_Jn * Bessel_Jm[jj])
-        H[jj] = numpy.dot(C[0:Nzeros], F[0:Nzeros])
+
+    if multipool:
+        args = __create_args(__N_CPU, c, Bessel_Jn, Bessel_Jm, F, Nzeros, N)
+
+        p = multiprocessing.Pool(__N_CPU)
+        H = numpy.concatenate(p.map(__calculate, args))
+        p.close()
+    else:
+        H = numpy.full(N, 0j)
+    
+        for jj in range(0, N):
+            C     = besselj(0, c[0:Nzeros] * c[jj] / c[N]) / (Bessel_Jn * Bessel_Jm[jj])
+            H[jj] = numpy.dot(C[0:Nzeros], F[0:Nzeros])
 
     H = H.conjugate().T
     H = numpy.multiply(H, m2)
@@ -91,3 +104,27 @@ def Hankel_Transform_MGS(h, R, c, Nzeros=0):
 
     return H
 
+def __calculate(args):
+    index_i, index_f, c, Bessel_Jn, Bessel_Jm, F, Nzeros, N = args
+
+    H = numpy.full((index_f-index_i), 0j)
+
+    for jj in range(index_i, index_f):
+        C = besselj(0, c[:Nzeros] * c[jj] / c[N]) / (Bessel_Jn * Bessel_Jm[jj])
+        H[jj-index_i] = numpy.dot(C[:Nzeros], F[:Nzeros])
+
+    return H
+
+def __create_args(n_pools, c, Bessel_Jn, Bessel_Jm, f, Nzeros, n):
+    args = [None]*n_pools
+
+    n_el = int(n/n_pools)
+    if n % n_pools == 0:
+        for i in range(n_pools):
+            args[i] = i * n_el, (i+1) * n_el, c, Bessel_Jn, Bessel_Jm, f, Nzeros, n
+    else:
+        for i in range(n_pools - 1):
+            args[i] = i * n_el, (i+1) * n_el, c, Bessel_Jn, Bessel_Jm, f, Nzeros, n
+        args[n_pools-1] = (n_pools - 1) * n_el, n_pools*n_el + n % n_pools, c, Bessel_Jn, Bessel_Jm, f, Nzeros, n
+
+    return args

@@ -62,7 +62,7 @@
 #%% ------------------------------------------------------------------------
 
 import numpy
-from fzp_simulator import bessel_zeros
+from scipy.special import jn_zeros
 from fzp_simulator.hankel_transform_MGS import Hankel_Transform_MGS
 from fzp_simulator.refractive_index import RefractiveIndex
 from fzp_simulator.efficiency_MGS import Efficiency_MGS
@@ -89,11 +89,14 @@ with_Range = 1  # equal to 0 --> plot to focal length
                 # equal to 1 --> plot in a given range
                
 with_MultiSlicing = 0 # equal to 1 --> apply multisilcing of the element 
-                       # equal to 0 --> no multislicing
+                      # equal to 0 --> no multislicing
 
 with_Complex = 0  # equal to 0 --> Complex Wavefront is not stored
                   # equal to 1 --> Complex Wavefront is storedk
- 
+
+with_MultiPool = 1 # equal to 1 --> activate multipool (n cores - 1)
+                   # equal to 0 --> no multipool
+
 energy = 8                         # photon energy [keV]
 wavelength = 12.398/energy*1e-10   # wavelength [m]
 k = 2*numpy.pi/wavelength          # wavevector [m-1]
@@ -144,6 +147,7 @@ height2 = (4/3)*1000e-9
 def run_simulation():
 
     Nzones = int(numpy.floor(1.0/4.0*(diam/bmin)))
+    multipool = with_MultiPool == 1
 
     radia = numpy.sqrt(numpy.arange(0, Nzones+1)*wavelength*f + ((numpy.arange(0, Nzones+1)*wavelength)**2)/4)
     profile = numpy.full(N, 1 + 0j)
@@ -239,7 +243,7 @@ def run_simulation():
 
     # Loading the position of the zeros, as much position as N+1. The file
     # c.mat contains up to 200000 zeros of the 1st order Bessel function.
-    c = bessel_zeros['c'][0, 0:N+1]
+    c = jn_zeros(0, N+1)
 
     # Definition of the position where the calculated input and transformated
     # funtions are evaluated. We define also the maximum frequency in the
@@ -278,7 +282,7 @@ def run_simulation():
     map_int[0, :] = numpy.multiply(numpy.abs(field0), numpy.abs(field0))
     if with_Complex == 1: map_complex[0, :] = field0[0:N]
 
-    four0 = Hankel_Transform_MGS(field0, R, c)
+    four0 = Hankel_Transform_MGS(field0, R, c, multipool=multipool)
     field0 = profile_h
 
     ## Multi-Slicing of the FZP
@@ -294,13 +298,13 @@ def run_simulation():
         for n in range(NSlices-1):
             proj = numpy.exp(-1j*Step_Slice*((2*numpy.pi*q)**2)/(2*k))
             fun = numpy.multiply(proj, four0)
-            field = Hankel_Transform_MGS(fun, Q, c)
+            field = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
 
             fun = numpy.multiply(field0, field)
             map_int[1+n, :] = numpy.multiply(numpy.abs(fun), numpy.abs(fun))
             if with_Complex == 1: map_complex[1+n, :] = fun
 
-            four0 = Hankel_Transform_MGS(fun, R, c, Nzeros)
+            four0 = Hankel_Transform_MGS(fun, R, c, Nzeros, multipool=multipool)
 
     # Calculation from the FZP position to full z range
     if with_Range == 0:
@@ -312,7 +316,7 @@ def run_simulation():
                 print("Z position nr. ", o + 1, ": ",  z[o])
                 proj = numpy.exp(-1j*z[o]*((2*numpy.pi*q)**2)/(2*k))
                 fun = numpy.multiply(proj, four0)
-                four11 = Hankel_Transform_MGS(fun, Q, c)
+                four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                 map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                 if with_Complex == 1: map_complex[o + NSlices, :] = four11
 
@@ -323,7 +327,7 @@ def run_simulation():
                 print("(OSA) Z position nr. ", o + 1, ": ", z[o])
                 proj = numpy.exp(-1j * z[o] * ((2 * numpy.pi * q)**2) / (2 * k))
                 fun = numpy.multiply(proj, four0)
-                four11 = Hankel_Transform_MGS(fun, Q, c)
+                four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                 map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                 if with_Complex == 1: map_complex[o + NSlices, :] = four11
 
@@ -332,7 +336,7 @@ def run_simulation():
 
             proj_OSA = numpy.exp(-1j * z[OSA_pos] * ((2 * numpy.pi * q)**2) / (2 * k))
             fun = numpy.multiply(proj_OSA, four0)
-            field_OSA = Hankel_Transform_MGS(fun, Q, c)
+            field_OSA = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
 
             # Inserting OSA
             #--------------------------------------------------------------------------
@@ -341,7 +345,7 @@ def run_simulation():
             field_OSA[int(OSA_pix/2)+1:N] = 0
 
             map_int[OSA_pos+NSlices,:] = numpy.multiply(numpy.abs(field_OSA), numpy.abs(field_OSA))
-            four_OSA =  Hankel_Transform_MGS(field_OSA,R,c)
+            four_OSA =  Hankel_Transform_MGS(field_OSA, R, c, multipool=multipool)
             if with_Complex == 1: map_complex[OSA_pos+NSlices,:] = field_OSA
 
             # Continue the propagation from OSA to focus
@@ -350,7 +354,7 @@ def run_simulation():
                 print("(OSA) Z position nr. ", o + 1, ": ", z[o] - z[OSA_pos])
                 proj = numpy.exp(-1j * (z[o] - z[OSA_pos]) * ((2 * numpy.pi * q)**2) / (2 * k))
                 fun = numpy.multiply(proj, four_OSA)
-                four11 = Hankel_Transform_MGS(fun, Q, c)
+                four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                 map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                 if with_Complex == 1: map_complex[o + NSlices, :] = four11
 
@@ -363,27 +367,27 @@ def run_simulation():
                 print("Z position nr. ", o+1, ": ",  z[o])
                 proj = numpy.exp(-1j*z[o]*((2*numpy.pi*q)**2)/(2*k))
                 fun = numpy.multiply(proj, four0)
-                four11 = Hankel_Transform_MGS(fun, Q, c)
+                four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                 map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                 if with_Complex == 1: map_complex[o + NSlices, :] = four11
         elif with_OSA == 1:
             if OSA_position < Range_i:
                 proj_OSA = numpy.exp(-1j*OSA_position*((2*numpy.pi*q)**2)/(2*k))
                 fun = numpy.multiply(proj_OSA, four0)
-                field_OSA = Hankel_Transform_MGS(fun, Q, c)
+                field_OSA = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
 
                 # Inserting OSA
                 #--------------------------------------------------------------------------
 
                 OSA_pix = int(numpy.floor(OSA_diam/step) - 1)
                 field_OSA[int(OSA_pix/2)+1:N] = 0
-                four_OSA =  Hankel_Transform_MGS(field_OSA,R,c)
+                four_OSA =  Hankel_Transform_MGS(field_OSA, R, c, multipool=multipool)
 
                 for o in range(Nz):
                     print("(OSA) Z position nr. ", o+1, ": ",  z[o] - OSA_position)
                     proj = numpy.exp(-1j*(z[o] - OSA_position)*((2*numpy.pi*q)**2)/(2*k))
                     fun = numpy.multiply(proj, four_OSA)
-                    four11 = Hankel_Transform_MGS(fun, Q, c)
+                    four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                     map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                     if with_Complex == 1: map_complex[o + NSlices, :] = four11
             else:
@@ -395,7 +399,7 @@ def run_simulation():
                     print("(OSA) Z position nr. ", o+1, ": ",  z[o])
                     proj = numpy.exp(-1j*z[o]*((2*numpy.pi*q)**2)/(2*k))
                     fun = numpy.multiply(proj, four0)
-                    four11 = Hankel_Transform_MGS(fun, Q, c)
+                    four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                     map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                     if with_Complex == 1: map_complex[o + NSlices, :] = four11
 
@@ -404,7 +408,7 @@ def run_simulation():
 
                 proj_OSA = numpy.exp(-1j * z[OSA_pos] * ((2 * numpy.pi * q)**2) / (2 * k))
                 fun = numpy.multiply(proj_OSA, four0)
-                field_OSA = Hankel_Transform_MGS(fun, Q, c)
+                field_OSA = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
 
                 # Inserting OSA
                 #--------------------------------------------------------------------------
@@ -413,7 +417,7 @@ def run_simulation():
                 field_OSA[int(OSA_pix/2)+1:N] = 0
 
                 map_int[OSA_pos+NSlices,:] = numpy.multiply(numpy.abs(field_OSA), numpy.abs(field_OSA))
-                four_OSA = Hankel_Transform_MGS(field_OSA,R,c)
+                four_OSA = Hankel_Transform_MGS(field_OSA, R, c, multipool=multipool)
                 if with_Complex == 1: map_complex[OSA_pos+NSlices, :] = field_OSA
 
                 # Continue the propagation from OSA to focus
@@ -422,7 +426,7 @@ def run_simulation():
                     print("(OSA) Z position nr. ", o + 1, ": ", z[o] - z[OSA_pos])
                     proj = numpy.exp(-1j * (z[o] - z[OSA_pos]) * ((2 * numpy.pi * q)**2) / (2 * k))
                     fun = numpy.multiply(proj, four_OSA)
-                    four11 = Hankel_Transform_MGS(fun, Q, c)
+                    four11 = Hankel_Transform_MGS(fun, Q, c, multipool=multipool)
                     map_int[o + NSlices, :] = numpy.multiply(numpy.abs(four11), numpy.abs(four11))
                     if with_Complex == 1: map_complex[o + NSlices, :] = four11
 
